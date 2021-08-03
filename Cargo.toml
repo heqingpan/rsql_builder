@@ -5,6 +5,8 @@ authors = ["heqingpan <heqingpan@126.com>"]
 license = "MIT/Apache-2.0"
 description = "sql builder utils"
 readme = "README.md"
+homepage = "https://gitee.com/hqp/sql_builder"
+repository = "https://gitee.com/hqp/sql_builder"
 keywords = ["database", "sql","utils"]
 edition = "2018"
 
