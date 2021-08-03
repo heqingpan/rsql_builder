@@ -1,5 +1,5 @@
 [package]
-name = "sql_builder"
+name = "rsql_builder"
 version = "0.1.0"
 authors = ["heqingpan <heqingpan@126.com>"]
 license = "MIT/Apache-2.0"
