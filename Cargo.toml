@@ -1,6 +1,11 @@
 [package]
 name = "sql_builder"
 version = "0.1.0"
+authors = ["heqingpan <heqingpan@126.com>"]
+license = "MIT/Apache-2.0"
+description = "sql builder utils"
+readme = "README.md"
+keywords = ["database", "sql","utils"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

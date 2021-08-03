@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 #[derive(Debug,Clone)]
 enum InnerSql<'a>{
-    V(String),
+    Value(String),
     Ref(&'a str)
 }
 
@@ -64,7 +64,7 @@ impl<'a> SqlBuilder<'a> {
     fn build_sql(&self) -> String {
         let sqls=self.sqls.iter().map(|e| {
             match e {
-                InnerSql::V(v) => v,
+                InnerSql::Value(v) => v,
                 InnerSql::Ref(v) => *v,
             }
         }).collect::<Vec<_>>();
