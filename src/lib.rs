@@ -62,14 +62,14 @@ pub struct SqlBuilder<'a> {
 
 impl<'a> SqlBuilder<'a> {
 
-    pub fn sql_args(builder:&mut SqlBuilder<'a>) -> (String,Vec<serde_json::Value>) {
+    pub fn prepare(builder:&mut SqlBuilder<'a>) -> (String,Vec<serde_json::Value>) {
         let mut top = Self::new();
         top.push_build(builder);
         (top.build_sql(),top.args)
     }
 
     pub fn b(builder:&mut SqlBuilder<'a>) -> (String,Vec<serde_json::Value>) {
-        Self::sql_args(builder)
+        Self::prepare(builder)
     }
 
     pub fn new() -> Self {
@@ -92,11 +92,11 @@ impl<'a> SqlBuilder<'a> {
             prefix_trim: trim_str,
             suffix_trim: trim_str,
             prefix: prefix,
-            suffix: prefix,
+            suffix: suffix,
         }
     }
     pub fn new_where() -> Self {
-        Self::new_builder(" and ","and"," where "," ")
+        Self::new_builder(" and ","and","where "," ")
     }
 
     pub fn new_or() -> Self {
@@ -150,9 +150,20 @@ impl<'a> SqlBuilder<'a> {
         self.prefix=="" &&self.prefix_trim=="" && self.suffix=="" && self.suffix_trim==""
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.sqls.is_empty()
+    }
+
     pub fn eq<T>(&mut self,field:&'a str,arg:&T) -> &mut Self 
     where T: serde::ser::Serialize {
         self.sqls.push(InnerSql::Value(format!("{}=?",field)));
+        self.args.push(json!(arg));
+        self
+    }
+
+    pub fn ne<T>(&mut self,field:&'a str,arg:&T) -> &mut Self 
+    where T: serde::ser::Serialize {
+        self.sqls.push(InnerSql::Value(format!("{}<>?",field)));
         self.args.push(json!(arg));
         self
     }
@@ -180,6 +191,19 @@ impl<'a> SqlBuilder<'a> {
     pub fn ge<T>(&mut self,field:&'a str,arg:&T) -> &mut Self 
     where T: serde::ser::Serialize {
         self.sqls.push(InnerSql::Value(format!("{}>=?",field)));
+        self.args.push(json!(arg));
+        self
+    }
+
+    pub fn like<T>(&mut self,field:&'a str,arg:&T) -> &mut Self 
+    where T: serde::ser::Serialize {
+        self.sqls.push(InnerSql::Value(format!("{} like ?",field)));
+        self.args.push(json!(arg));
+        self
+    }
+    pub fn not_like<T>(&mut self,field:&'a str,arg:&T) -> &mut Self 
+    where T: serde::ser::Serialize {
+        self.sqls.push(InnerSql::Value(format!("{} not like ?",field)));
         self.args.push(json!(arg));
         self
     }
@@ -232,6 +256,9 @@ impl<'a> SqlBuilder<'a> {
     }
 
     fn build_sql(&self) -> String {
+        if self.sqls.is_empty() {
+            return "".to_owned()
+        }
         let sqls=self.sqls.iter().map(|e| {
             match e {
                 InnerSql::Value(v) => v,
@@ -239,8 +266,9 @@ impl<'a> SqlBuilder<'a> {
             }
         }).collect::<Vec<_>>();
         let sql = sqls.join(self.join_str);
-        sql_trim_string(self.prefix_trim, self.suffix_trim, &sql)
-        //format!("{}{}{}",self.prefix,&sql_trim_string(self.prefix_trim, self.suffix_trim, &sql),self.suffix)
+        let trim_sql=sql_trim_string(self.prefix_trim, self.suffix_trim, &sql);
+        //println!("build_sql:{},{}",&sql,&trim_sql);
+        format!("{}{}{}",self.prefix,&trim_sql,self.suffix)
     }
 }
 
@@ -312,7 +340,7 @@ mod tests {
 
     #[test]
     fn test_sql_args(){
-        let (sql,args)=B::sql_args(
+        let (sql,args)=B::prepare(
     B::new_sql("select * from tb_foo")
             .push_build(B::new_where()
                 .eq("a",&1)
