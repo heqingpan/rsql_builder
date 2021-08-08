@@ -32,6 +32,7 @@ build rule
 ### simple push
 
 + builder.push(sql,arg)
++ builder.push_fn(f:Fn()->builder)
 + builder.push_sql(sql)
 + builder.push_arg(arg)
 
@@ -65,12 +66,12 @@ foo_dao example:
 use rsql_builder::B;
 
 /* 
-example table: 
+example table[sqlite]: 
 create table if not exists tb_foo (
     id integer primary key autoincrement,
     name varchar(255),
     email varchar(255),
-    age varchar(255),
+    age integer 
 );
 */
 
@@ -136,6 +137,16 @@ impl FooInnerDao {
         B::prepare(
      B::new_sql("select id,name,email,age from tb_foo")
             .push_build(&mut self.conditions(param))
+            .push_fn(||{
+                let mut b= B::new();
+                if let Some(limit) = &param.limit{
+                    b.push("limit ?", limit);
+                }
+                if let Some(offset ) = &param.offset{
+                    b.push("offset ?", offset);
+                }
+                b
+            })
         )
     }
 

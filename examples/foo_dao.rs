@@ -28,6 +28,8 @@ pub struct FooParam{
     pub age:Option<i64>,
     pub age_begin:Option<i64>,
     pub age_end:Option<i64>,
+    pub limit:Option<i64>,
+    pub offset:Option<i64>,
 }
 
 struct FooInnerDao {
@@ -72,6 +74,16 @@ impl FooInnerDao {
         B::prepare(
      B::new_sql("select id,name,email,age from tb_foo")
             .push_build(&mut self.conditions(param))
+            .push_fn(||{
+                let mut b= B::new();
+                if let Some(limit) = &param.limit{
+                    b.push("limit ?", limit);
+                }
+                if let Some(offset ) = &param.offset{
+                    b.push("offset ?", offset);
+                }
+                b
+            })
         )
     }
 
@@ -105,7 +117,8 @@ impl FooInnerDao {
     pub fn update_prepare(&self,foo:&Foo) -> (String,Vec<serde_json::Value>) {
         let mut set_builder=B::new_comma();
         if let Some(name) = &foo.name {
-            set_builder.push("name=?",name);
+            //set_builder.push("name=?",name);
+            set_builder.eq("name",name);
         }
         if let Some(email) = &foo.email {
             set_builder.push("email=?",email);
@@ -159,6 +172,8 @@ fn query_exp(){
     param.age=Some(18);
     param.age_begin=Some(16);
     param.age_end=Some(24);
+    param.limit=Some(10);
+    param.offset=Some(10);
     let (sql,args)= foo_dao.query_prepare(&param);
     println!("query 04:\n\t'{}'\n\t{:?}",&sql,&args); 
 }

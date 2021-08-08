@@ -72,6 +72,12 @@ impl<'a> SqlBuilder<'a> {
         Self::prepare(builder)
     }
 
+    pub fn real(builder:&mut SqlBuilder<'a>) -> Self {
+        let mut top = Self::new();
+        top.push_build(builder);
+        top
+    }
+
     pub fn new() -> Self {
         Self{
             sqls:Default::default(),
@@ -144,6 +150,13 @@ impl<'a> SqlBuilder<'a> {
     where T: serde::ser::Serialize {
         self.args.push(json!(arg));
         self
+    }
+
+    pub fn push_fn<F>(&mut self,f:F) -> &mut Self 
+    where
+        F: Fn() -> Self + Send
+    {
+        self.push_build(&mut f())
     }
 
     fn is_not_trim(&self) -> bool{
