@@ -1,4 +1,4 @@
-use rsql_builder::{B, ArgPlaceholderMode};
+use rsql_builder::{B, PlaceholderMode};
 
 /* 
 example table: 
@@ -39,7 +39,8 @@ struct FooInnerDao {
 impl FooInnerDao {
 
     fn conditions(&self,param:&FooParam) -> B {
-        let mut whr = B::new_where();
+        let mut whr = B::new_where()
+            .set_mode(PlaceholderMode::PgSql);
         if let Some(id)=&param.id {
             whr.eq("id",id);
         }
@@ -73,14 +74,15 @@ impl FooInnerDao {
     pub fn query_prepare(&self,param:&FooParam) -> (String,Vec<serde_json::Value>) {
         B::prepare(
      B::new_sql("select id,name,email,age from tb_foo")
+            //.set_mode(PlaceholderMode::PgSql)
             .push_build(&mut self.conditions(param))
             .push_fn(||{
                 let mut b= B::new();
                 if let Some(limit) = &param.limit{
-                    b.push("limit ?", limit);
+                    b.limit(limit);
                 }
                 if let Some(offset ) = &param.offset{
-                    b.push("offset ?", offset);
+                    b.offset(offset);
                 }
                 b
             })
@@ -108,7 +110,7 @@ impl FooInnerDao {
         }
         B::prepare(
      B::new_sql("insert into tb_foo")
-            //.set_mode(ArgPlaceholderMode::PgSql)
+            .set_mode(PlaceholderMode::PgSql)
             .push_build(&mut field_builder)
             .push_sql("values")
             .push_build(&mut value_builder)
@@ -136,6 +138,7 @@ impl FooInnerDao {
         }
         B::prepare(
      B::new_sql("update tb_foo set ")
+            .set_mode(PlaceholderMode::PgSql)
             .push_build(&mut set_builder)
             .push_build(&mut whr)
         )

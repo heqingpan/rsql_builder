@@ -64,7 +64,7 @@ fn sql_trim_string(prefix:&str,suffix:&str,value:&str) ->String {
 
 
 #[derive(Debug,Clone)]
-pub enum ArgPlaceholderMode{
+pub enum PlaceholderMode{
     Default,//mysql,sqlite ?
     PgSql,//postgresql $1
 }
@@ -74,33 +74,49 @@ const D_CHAR:u8 = "$".as_bytes()[0];
 const NUM_0:u8 = "0".as_bytes()[0];
 const NUM_9:u8 = "9".as_bytes()[0];
 
-pub fn sql_placeholder_transfer(sql:&str,t:ArgPlaceholderMode) -> String {
+pub fn sql_placeholder_transfer(sql:String,mode:PlaceholderMode) -> String {
     let mut bytes = sql.as_bytes();
 
     let mut parts = vec![];
     let mut pre_i=0;
     let len = bytes.len();
     let mut i = 0;
+    let mut use_defult=false;
+    let mut use_pg=false;
     while i<len {
         let char = bytes[i];
         if char == Q_CHAR {
             parts.push((pre_i,i));
+            use_defult=true;
             pre_i = i+1;
         }
         else if char==D_CHAR {
             parts.push((pre_i,i));
-            i+=i;
+            use_pg=true;
+            i+=1;
             while i<len {
                 let char = bytes[i];
                 if char < NUM_0 || char > NUM_9 {
                     break;
                 }
-                i+=i;
+                i+=1;
             }
             pre_i = i;
             continue;
         }
         i+=1;
+    }
+    match mode {
+        PlaceholderMode::Default => {
+            if use_pg==false {
+                return sql;
+            }
+        },
+        PlaceholderMode::PgSql => {
+            if use_defult==false {
+                return sql;
+            }
+        },
     }
     let mut r_bytes=vec![];
     for i in 0..parts.len() {
@@ -108,9 +124,9 @@ pub fn sql_placeholder_transfer(sql:&str,t:ArgPlaceholderMode) -> String {
         for c in &bytes[p..q]{
             r_bytes.push(*c);
         }
-        match t {
-            ArgPlaceholderMode::Default => r_bytes.push(Q_CHAR),
-            ArgPlaceholderMode::PgSql => {
+        match mode {
+            PlaceholderMode::Default => r_bytes.push(Q_CHAR),
+            PlaceholderMode::PgSql => {
                 for c in format!("${}",i+1).as_bytes() {
                     r_bytes.push(*c);
                 }
@@ -135,7 +151,7 @@ pub struct SqlBuilder<'a> {
     suffix_trim: &'a str,
     prefix: &'a str,
     suffix: &'a str,
-    mode: ArgPlaceholderMode,
+    mode: PlaceholderMode,
 }
 
 impl<'a> SqlBuilder<'a> {
@@ -165,7 +181,7 @@ impl<'a> SqlBuilder<'a> {
             suffix_trim: "",
             prefix: "",
             suffix: "",
-            mode: ArgPlaceholderMode::Default,
+            mode: PlaceholderMode::Default,
         }
     }
 
@@ -178,7 +194,7 @@ impl<'a> SqlBuilder<'a> {
             suffix_trim: trim_str,
             prefix: prefix,
             suffix: suffix,
-            mode: ArgPlaceholderMode::Default,
+            mode: PlaceholderMode::Default,
         }
     }
 
@@ -240,7 +256,7 @@ impl<'a> SqlBuilder<'a> {
         self.push_build(&mut f())
     }
 
-    pub fn set_mode(mut self,mode:ArgPlaceholderMode) -> Self{
+    pub fn set_mode(mut self,mode:PlaceholderMode) -> Self{
         self.mode=mode;
         self
     }
@@ -332,6 +348,20 @@ impl<'a> SqlBuilder<'a> {
         self
     }
 
+    pub fn limit<T>(&mut self,arg:&T) -> &mut Self 
+    where T: serde::ser::Serialize {
+        self.sqls.push(InnerSql::Ref("limit ?"));
+        self.args.push(json!(arg));
+        self
+    }
+
+    pub fn offset<T>(&mut self,arg:&T) -> &mut Self 
+    where T: serde::ser::Serialize {
+        self.sqls.push(InnerSql::Ref("offset ?"));
+        self.args.push(json!(arg));
+        self
+    }
+
     pub fn wrap(&mut self,b:&mut Self) -> &mut Self{
         let (sql,args) = b.build();
         self.sqls.push(InnerSql::Value(sql));
@@ -375,13 +405,15 @@ impl<'a> SqlBuilder<'a> {
         let trim_sql=sql_trim_string(self.prefix_trim, self.suffix_trim, &sql);
         //println!("build_sql:{},{}",&sql,&trim_sql);
         let v=format!("{}{}{}",self.prefix,&trim_sql,self.suffix);
+        sql_placeholder_transfer(v, self.mode.clone())
+        /*
         match self.mode {
             ArgPlaceholderMode::Default => v,
             ArgPlaceholderMode::PgSql => {
-                sql_placeholder_transfer(&v, ArgPlaceholderMode::PgSql)
+                sql_placeholder_transfer(v, ArgPlaceholderMode::PgSql)
             },
         }
-
+         */
     }
 }
 
@@ -401,6 +433,8 @@ pub use SqlBuilder as B;
 
 #[cfg(test)]
 mod tests {
+    use crate::sql_placeholder_transfer;
+
     use super::SqlBuilder;
     use super::B;
     use super::IBuilder;
@@ -463,5 +497,18 @@ mod tests {
             )   
         );
         println!("{},{:?}",&sql,&args);
+    }
+
+    #[test]
+    fn test_default_to_pg_style(){
+        let sql ="select id,name,email,age from tb_foo where id in ($1 , $2 , $3) and name in ($4 , $5) and (name=$6 or email=$7) and age=$8 and age>=$9 and age<$10  limit ? offset ?"; 
+        let mysql_sql="select id,name,email,age from tb_foo where id in (? , ? , ?) and name in (? , ?) and (name=? or email=?) and age=? and age>=? and age<?  limit ? offset ?";
+        let pg_sql="select id,name,email,age from tb_foo where id in ($1 , $2 , $3) and name in ($4 , $5) and (name=$6 or email=$7) and age=$8 and age>=$9 and age<$10  limit $11 offset $12";
+        let o_mysql_sql = sql_placeholder_transfer(sql.to_owned(), crate::PlaceholderMode::Default);
+        let o_pg_sql = sql_placeholder_transfer(sql.to_owned(), crate::PlaceholderMode::PgSql);
+        println!("{}",&o_mysql_sql);
+        println!("{}",&o_pg_sql);
+        assert_eq!(mysql_sql,&o_mysql_sql);
+        assert_eq!(pg_sql,&o_pg_sql);
     }
 }
