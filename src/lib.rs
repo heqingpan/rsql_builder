@@ -2,22 +2,8 @@
 
 use serde_json::{json, Value};
 
-pub struct SqlAndArgs{
-    pub sql:String,
-    pub args:Vec<Value>,
-}
-
-impl From<SqlBuilder<'_>> for SqlAndArgs {
-    fn from(b: SqlBuilder) -> Self {
-        Self {
-            sql: b.build_sql(),
-            args: b.args,
-        }
-    }
-}
-
 pub trait IBuilder {
-    fn build(&mut self)  -> (String,&mut Vec<Value>);
+    fn build(&mut self)  -> (String,Vec<Value>);
 }
 
 #[derive(Debug,Clone)]
@@ -65,8 +51,8 @@ fn sql_trim_string(prefix:&str,suffix:&str,value:&str) ->String {
 
 #[derive(Debug,Clone)]
 pub enum PlaceholderMode{
-    Default,//mysql,sqlite ?
-    PgSql,//postgresql $1
+    Default,//mysql,sqlite; the placeholder is ?
+    PgSql,//postgresql;  the placeholder is $Number
 }
 
 const Q_CHAR:u8 = "?".as_bytes()[0];
@@ -157,9 +143,7 @@ pub struct SqlBuilder<'a> {
 impl<'a> SqlBuilder<'a> {
 
     pub fn prepare(builder:&mut SqlBuilder<'a>) -> (String,Vec<serde_json::Value>) {
-        let mut args = vec![];
-        args.append(&mut builder.args);
-        (builder.build_sql(),args)
+        builder.build()
     }
 
     pub fn b(builder:&mut SqlBuilder<'a>) -> (String,Vec<serde_json::Value>) {
@@ -330,9 +314,9 @@ impl<'a> SqlBuilder<'a> {
         for arg in args {
             in_value.push("?", arg);
         }
-        let (sql,args) = in_value.build();
+        let (sql,mut args) = in_value.build();
         self.sqls.push(InnerSql::Value(format!("{} in {}",field,sql)));
-        self.args.append(args);
+        self.args.append(&mut args);
         self
     }
 
@@ -342,9 +326,9 @@ impl<'a> SqlBuilder<'a> {
         for arg in args {
             in_value.push("?", arg);
         }
-        let (sql,args) = in_value.build();
+        let (sql,mut args) = in_value.build();
         self.sqls.push(InnerSql::Value(format!("{} not in {}",field,sql)));
-        self.args.append(args);
+        self.args.append(&mut args);
         self
     }
 
@@ -363,9 +347,9 @@ impl<'a> SqlBuilder<'a> {
     }
 
     pub fn wrap(&mut self,b:&mut Self) -> &mut Self{
-        let (sql,args) = b.build();
+        let (sql,mut args) = b.build();
         self.sqls.push(InnerSql::Value(sql));
-        self.args.append(args);
+        self.args.append(&mut args);
         self
     }
 
@@ -379,15 +363,9 @@ impl<'a> SqlBuilder<'a> {
     }
 
     pub fn push_ibuild(&mut self,b:&mut Box<dyn IBuilder>) -> &mut Self{
-        let (sql,args) = b.build();
+        let (sql,mut args) = b.build();
         self.sqls.push(InnerSql::Value(sql));
-        self.args.append(args);
-        self
-    }
-
-    pub fn push_sql_args(&mut self,mut sql_args:SqlAndArgs) -> &mut Self{
-        self.sqls.push(InnerSql::Value(sql_args.sql));
-        self.args.append(&mut sql_args.args);
+        self.args.append(&mut args);
         self
     }
 
@@ -418,8 +396,10 @@ impl<'a> SqlBuilder<'a> {
 }
 
 impl IBuilder for SqlBuilder<'_> {
-    fn build(&mut self) -> (std::string::String, &mut std::vec::Vec<serde_json::Value>) {
-        (self.build_sql(),&mut self.args)
+    fn build(&mut self) -> (std::string::String, std::vec::Vec<serde_json::Value>) {
+        let mut args = vec![];
+        args.append(&mut self.args);
+        (self.build_sql(),args)
     }
 }
 

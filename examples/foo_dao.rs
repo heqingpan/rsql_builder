@@ -1,7 +1,7 @@
-use rsql_builder::{B, PlaceholderMode};
+use rsql_builder::{B, PlaceholderMode, IBuilder};
 
 /* 
-example table: 
+-- example table: 
 create table if not exists tb_foo (
     id integer primary key autoincrement,
     name varchar(255),
@@ -39,8 +39,7 @@ struct FooInnerDao {
 impl FooInnerDao {
 
     fn conditions(&self,param:&FooParam) -> B {
-        let mut whr = B::new_where()
-            .set_mode(PlaceholderMode::PgSql);
+        let mut whr = B::new_where();
         if let Some(id)=&param.id {
             whr.eq("id",id);
         }
@@ -72,8 +71,7 @@ impl FooInnerDao {
     }
 
     pub fn query_prepare(&self,param:&FooParam) -> (String,Vec<serde_json::Value>) {
-        B::prepare(
-     B::new_sql("select id,name,email,age from tb_foo")
+        B::new_sql("select id,name,email,age from tb_foo")
             //.set_mode(PlaceholderMode::PgSql)
             .push_build(&mut self.conditions(param))
             .push_fn(||{
@@ -85,8 +83,7 @@ impl FooInnerDao {
                     b.offset(offset);
                 }
                 b
-            })
-        )
+            }).build()
     }
 
     pub fn insert_prepare(&self,foo:&Foo) -> (String,Vec<serde_json::Value>) {
@@ -108,13 +105,12 @@ impl FooInnerDao {
             field_builder.push_sql("age");
             value_builder.push("?",age);
         }
-        B::prepare(
-     B::new_sql("insert into tb_foo")
-            .set_mode(PlaceholderMode::PgSql)
+        B::new_sql("insert into tb_foo")
+            //.set_mode(PlaceholderMode::PgSql)
             .push_build(&mut field_builder)
             .push_sql("values")
             .push_build(&mut value_builder)
-        )
+            .build()
     }
 
     pub fn update_prepare(&self,foo:&Foo) -> (String,Vec<serde_json::Value>) {
@@ -136,19 +132,19 @@ impl FooInnerDao {
         if whr.is_empty() {
             panic!("update conditions is empty");
         }
-        B::prepare(
-     B::new_sql("update tb_foo set ")
-            .set_mode(PlaceholderMode::PgSql)
+        B::new_sql("update tb_foo set ")
+            //.set_mode(PlaceholderMode::PgSql)
             .push_build(&mut set_builder)
             .push_build(&mut whr)
-        )
+            .build()
     }
 
     pub fn delete_prepare(&self,param:&FooParam) -> (String,Vec<serde_json::Value>) {
-        B::prepare(
-     B::new_sql("delete from tb_foo")
+        B::new_sql("delete from tb_foo")
+            //.set_mode(PlaceholderMode::PgSql)
             .push_build(&mut self.conditions(param))
-        )
+            .build()
+       
     }
 
 }
@@ -237,8 +233,6 @@ fn delete_exp(){
 
 
 fn main(){
-    let a="012345".as_bytes();
-    println!("{:?}",&a[0..0]);
     query_exp();
     insert_exp();
     update_exp();

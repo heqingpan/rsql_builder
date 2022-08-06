@@ -29,6 +29,22 @@ build rule
 |B::new_and() | " and " | "("|")"|"and"|
 |B::new_paren() | " " | "("|")"|[empty]|
 
+### set placeholder mode 
+
+set builder placeholder mode.
+
+the PlaceholderMode enum:
+
+```
+pub enum PlaceholderMode{
+    Default,//mysql,sqlite; the placeholder is ?
+    PgSql,//postgresql;  the placeholder is $Number
+}
+```
+
+use mode example: `builer.set_mode(PlaceholderMode::PgSql)`
+
+
 ### simple push
 
 + builder.push(sql,arg)
@@ -52,10 +68,13 @@ build rule
 |ge|f>=?|
 |r#in| f in(?,?,?)|
 |not_in| f not in(?,?,?)|
+|limit|limit ?|
+|offset|offset ?|
 
-### prepare
+### build
 
-B::prepare(&mut Builder) -> (String,Vec<serde_json::Value>) 
+builder.build(&mut Builder) -> (String,Vec<serde_json::Value>) 
+
 return (sql,args) 
 
 ## examples 
@@ -63,15 +82,15 @@ return (sql,args)
 foo_dao example:
 
 ```rust
-use rsql_builder::B;
+use rsql_builder::{B, PlaceholderMode, IBuilder};
 
 /* 
-example table[sqlite]: 
+-- example table: 
 create table if not exists tb_foo (
     id integer primary key autoincrement,
     name varchar(255),
     email varchar(255),
-    age integer 
+    age varchar(255),
 );
 */
 
@@ -93,6 +112,8 @@ pub struct FooParam{
     pub age:Option<i64>,
     pub age_begin:Option<i64>,
     pub age_end:Option<i64>,
+    pub limit:Option<i64>,
+    pub offset:Option<i64>,
 }
 
 struct FooInnerDao {
@@ -134,20 +155,19 @@ impl FooInnerDao {
     }
 
     pub fn query_prepare(&self,param:&FooParam) -> (String,Vec<serde_json::Value>) {
-        B::prepare(
-     B::new_sql("select id,name,email,age from tb_foo")
+        B::new_sql("select id,name,email,age from tb_foo")
+            //.set_mode(PlaceholderMode::PgSql)
             .push_build(&mut self.conditions(param))
             .push_fn(||{
                 let mut b= B::new();
                 if let Some(limit) = &param.limit{
-                    b.push("limit ?", limit);
+                    b.limit(limit);
                 }
                 if let Some(offset ) = &param.offset{
-                    b.push("offset ?", offset);
+                    b.offset(offset);
                 }
                 b
-            })
-        )
+            }).build()
     }
 
     pub fn insert_prepare(&self,foo:&Foo) -> (String,Vec<serde_json::Value>) {
@@ -169,18 +189,19 @@ impl FooInnerDao {
             field_builder.push_sql("age");
             value_builder.push("?",age);
         }
-        B::prepare(
-     B::new_sql("insert into tb_foo")
+        B::new_sql("insert into tb_foo")
+            //.set_mode(PlaceholderMode::PgSql)
             .push_build(&mut field_builder)
             .push_sql("values")
             .push_build(&mut value_builder)
-        )
+            .build()
     }
 
     pub fn update_prepare(&self,foo:&Foo) -> (String,Vec<serde_json::Value>) {
         let mut set_builder=B::new_comma();
         if let Some(name) = &foo.name {
-            set_builder.push("name=?",name);
+            //set_builder.push("name=?",name);
+            set_builder.eq("name",name);
         }
         if let Some(email) = &foo.email {
             set_builder.push("email=?",email);
@@ -195,18 +216,19 @@ impl FooInnerDao {
         if whr.is_empty() {
             panic!("update conditions is empty");
         }
-        B::prepare(
-     B::new_sql("update tb_foo set ")
+        B::new_sql("update tb_foo set ")
+            //.set_mode(PlaceholderMode::PgSql)
             .push_build(&mut set_builder)
             .push_build(&mut whr)
-        )
+            .build()
     }
 
     pub fn delete_prepare(&self,param:&FooParam) -> (String,Vec<serde_json::Value>) {
-        B::prepare(
-     B::new_sql("delete from tb_foo")
+        B::new_sql("delete from tb_foo")
+            //.set_mode(PlaceholderMode::PgSql)
             .push_build(&mut self.conditions(param))
-        )
+            .build()
+       
     }
 
 }
@@ -234,6 +256,8 @@ fn query_exp(){
     param.age=Some(18);
     param.age_begin=Some(16);
     param.age_end=Some(24);
+    param.limit=Some(10);
+    param.offset=Some(10);
     let (sql,args)= foo_dao.query_prepare(&param);
     println!("query 04:\n\t'{}'\n\t{:?}",&sql,&args); 
 }
@@ -304,33 +328,33 @@ output:
 
 ```
 query 01:
-        'select id,name,email,age from tb_foo'
-        []
+	'select id,name,email,age from tb_foo'
+	[]
 query 02:
-        'select id,name,email,age from tb_foo where id=?'
-        [Number(1)]
+	'select id,name,email,age from tb_foo where id=?'
+	[Number(1)]
 query 03:
-        'select id,name,email,age from tb_foo where id in (? , ? , ?)'
-        [Number(1), Number(2), Number(3)]
+	'select id,name,email,age from tb_foo where id in (? , ? , ?)'
+	[Number(1), Number(2), Number(3)]
 query 04:
-        'select id,name,email,age from tb_foo where id in (? , ? , ?) and name in (? , ?) and (name=? or email=?) and age=? and age>=? and age<?'
-        [Number(1), Number(2), Number(3), String("foo"), String("boo"), String("foo@foo.com"), String("foo@foo.com"), Number(18), Number(16), Number(24)]
+	'select id,name,email,age from tb_foo where id in (? , ? , ?) and name in (? , ?) and (name=? or email=?) and age=? and age>=? and age<?  limit ? offset ?'
+	[Number(1), Number(2), Number(3), String("foo"), String("boo"), String("foo@foo.com"), String("foo@foo.com"), Number(18), Number(16), Number(24), Number(10), Number(10)]
 insert 01:
-        'insert into tb_foo (id , name) values (? , ?)'
-        [Number(1), String("foo")]
+	'insert into tb_foo (id , name) values (? , ?)'
+	[Number(1), String("foo")]
 insert 02:
-        'insert into tb_foo (name , email) values (? , ?)'
-        [String("foo"), String("foo@foo.com")]
+	'insert into tb_foo (name , email) values (? , ?)'
+	[String("foo"), String("foo@foo.com")]
 insert 03:
-        'insert into tb_foo (id , name , email , age) values (? , ? , ? , ?)'
-        [Number(3), String("foo"), String("foo@foo.com"), Number(16)]
+	'insert into tb_foo (id , name , email , age) values (? , ? , ? , ?)'
+	[Number(3), String("foo"), String("foo@foo.com"), Number(16)]
 update 01:
-        'update tb_foo set   name=?  where id=?'
-        [String("foo"), Number(1)]
+	'update tb_foo set   name=?  where id=?'
+	[String("foo"), Number(1)]
 update 02:
-        'update tb_foo set   name=? , email=? , age=?  where id=?'
-        [String("foo"), String("foo@foo.com"), Number(16), Number(3)]
-delete 04:
-        'delete from tb_foo where id in (? , ? , ?) and name in (? , ?) and (name=? or email=?) and age=? and age>=? and age<?'
-        [Number(1), Number(2), Number(3), String("foo"), String("boo"), String("foo@foo.com"), String("foo@foo.com"), Number(18), Number(16), Number(24)]
+	'update tb_foo set   name=? , email=? , age=?  where id=?'
+	[String("foo"), String("foo@foo.com"), Number(16), Number(3)]
+delete 01:
+	'delete from tb_foo where id in (? , ? , ?) and name in (? , ?) and (name=? or email=?) and age=? and age>=? and age<?'
+	[Number(1), Number(2), Number(3), String("foo"), String("boo"), String("foo@foo.com"), String("foo@foo.com"), Number(18), Number(16), Number(24)]
 ```
