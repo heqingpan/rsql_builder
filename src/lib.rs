@@ -75,7 +75,7 @@ const NUM_0:u8 = "0".as_bytes()[0];
 const NUM_9:u8 = "9".as_bytes()[0];
 
 pub fn sql_placeholder_transfer(sql:String,mode:PlaceholderMode) -> String {
-    let mut bytes = sql.as_bytes();
+    let bytes = sql.as_bytes();
 
     let mut parts = vec![];
     let mut pre_i=0;
