@@ -2,6 +2,20 @@
 
 use serde_json::{json, Value};
 
+pub struct SqlAndArgs{
+    pub sql:String,
+    pub args:Vec<Value>,
+}
+
+impl From<SqlBuilder<'_>> for SqlAndArgs {
+    fn from(b: SqlBuilder) -> Self {
+        Self {
+            sql: b.build_sql(),
+            args: b.args,
+        }
+    }
+}
+
 pub trait IBuilder {
     fn build(&mut self)  -> (String,&mut Vec<Value>);
 }
@@ -50,6 +64,69 @@ fn sql_trim_string(prefix:&str,suffix:&str,value:&str) ->String {
 
 
 #[derive(Debug,Clone)]
+pub enum ArgPlaceholderMode{
+    Default,//mysql,sqlite ?
+    PgSql,//postgresql $1
+}
+
+const Q_CHAR:u8 = "?".as_bytes()[0];
+const D_CHAR:u8 = "$".as_bytes()[0];
+const NUM_0:u8 = "0".as_bytes()[0];
+const NUM_9:u8 = "9".as_bytes()[0];
+
+pub fn sql_placeholder_transfer(sql:&str,t:ArgPlaceholderMode) -> String {
+    let mut bytes = sql.as_bytes();
+
+    let mut parts = vec![];
+    let mut pre_i=0;
+    let len = bytes.len();
+    let mut i = 0;
+    while i<len {
+        let char = bytes[i];
+        if char == Q_CHAR {
+            parts.push((pre_i,i));
+            pre_i = i+1;
+        }
+        else if char==D_CHAR {
+            parts.push((pre_i,i));
+            i+=i;
+            while i<len {
+                let char = bytes[i];
+                if char < NUM_0 || char > NUM_9 {
+                    break;
+                }
+                i+=i;
+            }
+            pre_i = i;
+            continue;
+        }
+        i+=1;
+    }
+    let mut r_bytes=vec![];
+    for i in 0..parts.len() {
+        let (p,q)=parts[i];
+        for c in &bytes[p..q]{
+            r_bytes.push(*c);
+        }
+        match t {
+            ArgPlaceholderMode::Default => r_bytes.push(Q_CHAR),
+            ArgPlaceholderMode::PgSql => {
+                for c in format!("${}",i+1).as_bytes() {
+                    r_bytes.push(*c);
+                }
+            }
+        };
+    }
+    if pre_i < len {
+        for c in &bytes[pre_i..len]{
+            r_bytes.push(*c);
+        }
+    }
+    String::from_utf8(r_bytes).unwrap()
+}
+
+
+#[derive(Debug,Clone)]
 pub struct SqlBuilder<'a> {
     sqls: Vec<InnerSql<'a>>,
     args: Vec<Value>,
@@ -58,14 +135,15 @@ pub struct SqlBuilder<'a> {
     suffix_trim: &'a str,
     prefix: &'a str,
     suffix: &'a str,
+    mode: ArgPlaceholderMode,
 }
 
 impl<'a> SqlBuilder<'a> {
 
     pub fn prepare(builder:&mut SqlBuilder<'a>) -> (String,Vec<serde_json::Value>) {
-        let mut top = Self::new();
-        top.push_build(builder);
-        (top.build_sql(),top.args)
+        let mut args = vec![];
+        args.append(&mut builder.args);
+        (builder.build_sql(),args)
     }
 
     pub fn b(builder:&mut SqlBuilder<'a>) -> (String,Vec<serde_json::Value>) {
@@ -87,6 +165,7 @@ impl<'a> SqlBuilder<'a> {
             suffix_trim: "",
             prefix: "",
             suffix: "",
+            mode: ArgPlaceholderMode::Default,
         }
     }
 
@@ -99,8 +178,10 @@ impl<'a> SqlBuilder<'a> {
             suffix_trim: trim_str,
             prefix: prefix,
             suffix: suffix,
+            mode: ArgPlaceholderMode::Default,
         }
     }
+
     pub fn new_where() -> Self {
         Self::new_builder(" and ","and","where "," ")
     }
@@ -158,6 +239,12 @@ impl<'a> SqlBuilder<'a> {
     {
         self.push_build(&mut f())
     }
+
+    pub fn set_mode(mut self,mode:ArgPlaceholderMode) -> Self{
+        self.mode=mode;
+        self
+    }
+
 
     fn is_not_trim(&self) -> bool{
         self.prefix=="" &&self.prefix_trim=="" && self.suffix=="" && self.suffix_trim==""
@@ -268,6 +355,12 @@ impl<'a> SqlBuilder<'a> {
         self
     }
 
+    pub fn push_sql_args(&mut self,mut sql_args:SqlAndArgs) -> &mut Self{
+        self.sqls.push(InnerSql::Value(sql_args.sql));
+        self.args.append(&mut sql_args.args);
+        self
+    }
+
     fn build_sql(&self) -> String {
         if self.sqls.is_empty() {
             return "".to_owned()
@@ -281,7 +374,14 @@ impl<'a> SqlBuilder<'a> {
         let sql = sqls.join(self.join_str);
         let trim_sql=sql_trim_string(self.prefix_trim, self.suffix_trim, &sql);
         //println!("build_sql:{},{}",&sql,&trim_sql);
-        format!("{}{}{}",self.prefix,&trim_sql,self.suffix)
+        let v=format!("{}{}{}",self.prefix,&trim_sql,self.suffix);
+        match self.mode {
+            ArgPlaceholderMode::Default => v,
+            ArgPlaceholderMode::PgSql => {
+                sql_placeholder_transfer(&v, ArgPlaceholderMode::PgSql)
+            },
+        }
+
     }
 }
 

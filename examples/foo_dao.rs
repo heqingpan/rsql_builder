@@ -1,4 +1,4 @@
-use rsql_builder::B;
+use rsql_builder::{B, ArgPlaceholderMode};
 
 /* 
 example table: 
@@ -108,6 +108,7 @@ impl FooInnerDao {
         }
         B::prepare(
      B::new_sql("insert into tb_foo")
+            //.set_mode(ArgPlaceholderMode::PgSql)
             .push_build(&mut field_builder)
             .push_sql("values")
             .push_build(&mut value_builder)
@@ -233,6 +234,8 @@ fn delete_exp(){
 
 
 fn main(){
+    let a="012345".as_bytes();
+    println!("{:?}",&a[0..0]);
     query_exp();
     insert_exp();
     update_exp();
