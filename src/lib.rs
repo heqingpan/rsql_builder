@@ -222,8 +222,19 @@ impl<'a> SqlBuilder<'a> {
         self
     }
 
+    ///
+    /// push &str sql
+    /// 
     pub fn push_sql(&mut self,sql:&'a str) -> &mut Self {
         self.sqls.push(InnerSql::Ref(sql));
+        self
+    }
+
+    ///
+    /// push String sql
+    /// 
+    pub fn push_string(&mut self,sql:String) -> &mut Self {
+        self.sqls.push(InnerSql::Value(sql));
         self
     }
 
@@ -329,6 +340,18 @@ impl<'a> SqlBuilder<'a> {
         let (sql,mut args) = in_value.build();
         self.sqls.push(InnerSql::Value(format!("{} not in {}",field,sql)));
         self.args.append(&mut args);
+        self
+    }
+
+    ///
+    /// build sql like:  order by ${field} [desc]
+    /// 
+    pub fn order_by(&mut self,field:&'a str,desc:bool) -> &mut Self {
+        self.sqls.push(InnerSql::Ref(" order by "));
+        self.sqls.push(InnerSql::Ref(field));
+        if desc {
+            self.sqls.push(InnerSql::Ref(" desc "));
+        }
         self
     }
 
